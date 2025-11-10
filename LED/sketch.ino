@@ -6,8 +6,12 @@
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 
-// Alamat I2C untuk OLED
+// Alamat I2C untuk kedua OLED
 #define OLED_ADDRESS 0x3C
+
+// Pin LED
+const int ledPin1 = 16;  // LED merah di core 0
+const int ledPin2 = 39;  // LED biru di core 1
 
 // Inisialisasi OLED pertama (I2C di core 0, menggunakan pin 14 (SDA) dan 13 (SCL))
 Adafruit_SSD1306 display1(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
@@ -15,64 +19,65 @@ Adafruit_SSD1306 display1(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 // Inisialisasi OLED kedua (I2C di core 1, menggunakan pin 20 (SDA) dan 19 (SCL))
 Adafruit_SSD1306 display2(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire1, -1);
 
-// Flag untuk mengatur giliran core
-volatile bool core0Turn = true;
+// Variabel untuk status LED
+volatile bool ledState1 = false;  // Status LED merah (core 0)
+volatile bool ledState2 = false;  // Status LED biru (core 1)
 
 // Task yang dijalankan pada core 0
 void core0Task(void *parameter) {
+  pinMode(ledPin1, OUTPUT);  // Set pin LED merah sebagai output
+  
   while (true) {
-    if (core0Turn) {
-      // Dapatkan ID core yang sedang digunakan
-      int coreID = xPortGetCoreID();  // Ini akan mengembalikan 0 untuk core 0 atau 1 untuk core 1
+    // Toggle LED merah
+    ledState1 = !ledState1;
+    digitalWrite(ledPin1, ledState1 ? HIGH : LOW);  // Menyalakan atau mematikan LED merah
 
-      // Tampilkan pesan "Core X : RTOS" di OLED pertama (core 0)
-      display1.clearDisplay();
-      display1.setTextSize(1);
-      display1.setTextColor(SSD1306_WHITE);
-      display1.setCursor(0, 0);
-      display1.print("Running on Core ");
-      display1.print(coreID);  // Menampilkan ID core
-      display1.setCursor(0, 10);  // Pindahkan ke baris berikutnya
-      display1.print("Core 0 : RTOS");
-      display1.display();
-      
-      // Beri waktu 5 detik agar pesan tetap tampil
-      vTaskDelay(5000 / portTICK_PERIOD_MS);  // Tunda 5 detik
+    // Tampilkan status LED di OLED pertama (core 0)
+    display1.clearDisplay();
+    display1.setTextSize(1);
+    display1.setTextColor(SSD1306_WHITE);
+    display1.setCursor(0, 0);
+    display1.print("Core 0 : RTOS");
 
-      // Ganti giliran ke core 1
-      core0Turn = false;
+    // Tampilkan status LED
+    display1.setCursor(0, 10);
+    if (ledState1) {
+      display1.print("LED Merah: Nyala");
+    } else {
+      display1.print("LED Merah: Mati");
     }
-
-    vTaskDelay(100 / portTICK_PERIOD_MS);  // Delay pendek untuk memberi kesempatan kepada core 1
+    display1.display();
+    
+    vTaskDelay(2000 / portTICK_PERIOD_MS);  // Delay 2 detik untuk blinking LED merah
   }
 }
 
 // Task yang dijalankan pada core 1
 void core1Task(void *parameter) {
+  pinMode(ledPin2, OUTPUT);  // Set pin LED biru sebagai output
+
   while (true) {
-    if (!core0Turn) {
-      // Dapatkan ID core yang sedang digunakan
-      int coreID = xPortGetCoreID();  // Ini akan mengembalikan 0 untuk core 0 atau 1 untuk core 1
+    // Toggle LED biru
+    ledState2 = !ledState2;
+    digitalWrite(ledPin2, ledState2 ? HIGH : LOW);  // Menyalakan atau mematikan LED biru
 
-      // Tampilkan pesan "Core X : Regular" di OLED kedua (core 1)
-      display2.clearDisplay();
-      display2.setTextSize(1);
-      display2.setTextColor(SSD1306_WHITE);
-      display2.setCursor(0, 0);
-      display2.print("Running on Core ");
-      display2.print(coreID);  // Menampilkan ID core
-      display2.setCursor(0, 10);  // Pindahkan ke baris berikutnya
-      display2.print("Core 1 : Regular");
-      display2.display();
-      
-      // Beri waktu 5 detik agar pesan tetap tampil
-      vTaskDelay(5000 / portTICK_PERIOD_MS);  // Tunda 5 detik
+    // Tampilkan status LED di OLED kedua (core 1)
+    display2.clearDisplay();
+    display2.setTextSize(1);
+    display2.setTextColor(SSD1306_WHITE);
+    display2.setCursor(0, 0);
+    display2.print("Core 1 : Regular");
 
-      // Ganti giliran ke core 0
-      core0Turn = true;
+    // Tampilkan status LED
+    display2.setCursor(0, 10);
+    if (ledState2) {
+      display2.print("LED Biru: Nyala");
+    } else {
+      display2.print("LED Biru: Mati");
     }
-
-    vTaskDelay(100 / portTICK_PERIOD_MS);  // Delay pendek untuk memberi kesempatan kepada core 0
+    display2.display();
+    
+    vTaskDelay(2000 / portTICK_PERIOD_MS);  // Delay 2 detik untuk blinking LED biru
   }
 }
 
