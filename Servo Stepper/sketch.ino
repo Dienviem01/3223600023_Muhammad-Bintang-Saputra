@@ -1,139 +1,124 @@
+#include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <Stepper.h>
 
-// Definisikan ukuran layar OLED
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
+// ----------------- KONFIGURASI STEPPER -----------------
 
-// Alamat I2C untuk kedua OLED
-#define OLED_ADDRESS 0x3C
+const int stepsPerRevolution = 200;
 
-// Pin untuk rotary encoder
-const int encoderPin1CLK = 8;  // Pin CLK untuk encoder 1 (core 0)
-const int encoderPin1DT = 3;   // Pin DT untuk encoder 1 (core 0)
-const int encoderPin1SW = 46;  // Pin SW untuk encoder 1 (core 0)
+// Stepper 1 di core 0, pin 15-18 (sesuai diagram JSON)
+#define STEPPER1_IN1 15  // B-
+#define STEPPER1_IN2 16  // B+
+#define STEPPER1_IN3 17  // A+
+#define STEPPER1_IN4 18  // A-
 
-const int encoderPin2CLK = 4;  // Pin CLK untuk encoder 2 (core 1)
-const int encoderPin2DT = 5;   // Pin DT untuk encoder 2 (core 1)
-const int encoderPin2SW = 6;   // Pin SW untuk encoder 2 (core 1)
+// Stepper 2 di core 1, pin 37-40 (sesuai diagram JSON)
+#define STEPPER2_IN1 37  // B-
+#define STEPPER2_IN2 38  // B+
+#define STEPPER2_IN3 39  // A+
+#define STEPPER2_IN4 40  // A-
 
-// Status nilai encoder
-volatile int encoderValue1 = 0;  // Nilai encoder 1 (core 0)
-volatile int encoderValue2 = 0;  // Nilai encoder 2 (core 1)
+Stepper stepper1(stepsPerRevolution, STEPPER1_IN1, STEPPER1_IN2, STEPPER1_IN3, STEPPER1_IN4);
+Stepper stepper2(stepsPerRevolution, STEPPER2_IN1, STEPPER2_IN2, STEPPER2_IN3, STEPPER2_IN4);
 
-// Inisialisasi OLED pertama (I2C di core 0, menggunakan pin 14 (SDA) dan 13 (SCL))
-Adafruit_SSD1306 display1(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+// ----------------- KONFIGURASI OLED -----------------
 
-// Inisialisasi OLED kedua (I2C di core 1, menggunakan pin 20 (SDA) dan 19 (SCL))
-Adafruit_SSD1306 display2(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire1, -1);
+TwoWire I2C_oled1 = TwoWire(0);  // OLED1: SCL 13, SDA 14
+TwoWire I2C_oled2 = TwoWire(1);  // OLED2: SCL 19, SDA 20
 
-// Fungsi untuk membaca rotary encoder 1 (core 0)
-void core0Task(void *parameter) {
-  pinMode(encoderPin1CLK, INPUT);  // Set pin CLK untuk encoder 1 sebagai input
-  pinMode(encoderPin1DT, INPUT);   // Set pin DT untuk encoder 1 sebagai input
-  pinMode(encoderPin1SW, INPUT_PULLUP);  // Set pin SW untuk encoder 1 dengan pull-up internal
+Adafruit_SSD1306 display1(128, 64, &I2C_oled1, -1);
+Adafruit_SSD1306 display2(128, 64, &I2C_oled2, -1);
 
-  int lastEncoded1 = 0;  // Variabel untuk menyimpan status sebelumnya dari CLK
+// ----------------- TAMPILAN OLED -----------------
 
-  while (true) {
-    int MSB = digitalRead(encoderPin1CLK);  // Baca status CLK
-    int LSB = digitalRead(encoderPin1DT);   // Baca status DT
+void initDisplays() {
+  // Hitung otomatis x-y untuk masing-masing motor
+  int s1MinPin = min(min(STEPPER1_IN1, STEPPER1_IN2),
+                     min(STEPPER1_IN3, STEPPER1_IN4));
+  int s1MaxPin = max(max(STEPPER1_IN1, STEPPER1_IN2),
+                     max(STEPPER1_IN3, STEPPER1_IN4));
 
-    // Deteksi perubahan arah encoder
-    int encoded = (MSB << 1) | LSB;  // Gabungkan MSB dan LSB
-    int sum = (lastEncoded1 << 2) | encoded;  // Gabungkan dengan status sebelumnya
-    if (sum == 0b1101 || sum == 0b0110) {
-      encoderValue1++;  // Encoder diputar searah
-    }
-    if (sum == 0b1110 || sum == 0b0001) {
-      encoderValue1--;  // Encoder diputar berlawanan arah
-    }
-    lastEncoded1 = encoded;  // Simpan status terakhir
+  int s2MinPin = min(min(STEPPER2_IN1, STEPPER2_IN2),
+                     min(STEPPER2_IN3, STEPPER2_IN4));
+  int s2MaxPin = max(max(STEPPER2_IN1, STEPPER2_IN2),
+                     max(STEPPER2_IN3, STEPPER2_IN4));
 
-    // Tampilkan nilai encoder 1 di OLED pertama (core 0)
-    display1.clearDisplay();
-    display1.setTextSize(1);
-    display1.setTextColor(SSD1306_WHITE);
-    display1.setCursor(0, 0);
-    display1.print("Core 0 : RTOS");
+  char line1[32];
+  char line2[32];
 
-    display1.setCursor(0, 10);
-    display1.print("Encoder 1: ");
-    display1.print(encoderValue1);
-    display1.display();
+  // OLED 1: "motor pin x-y running core 0"
+  display1.clearDisplay();
+  display1.setTextSize(1);
+  display1.setTextColor(SSD1306_WHITE);
+  display1.setCursor(0, 0);
+  snprintf(line1, sizeof(line1), "Motor pin %d-%d", s1MinPin, s1MaxPin);
+  display1.println(line1);
+  display1.println("running core 0");
+  display1.display();
 
-    vTaskDelay(100 / portTICK_PERIOD_MS);  // Delay pendek untuk membaca encoder
+  // OLED 2: "motor pin x-y running di core 1"
+  display2.clearDisplay();
+  display2.setTextSize(1);
+  display2.setTextColor(SSD1306_WHITE);
+  display2.setCursor(0, 0);
+  snprintf(line2, sizeof(line2), "Motor pin %d-%d", s2MinPin, s2MaxPin);
+  display2.println(line2);
+  display2.println("running di core 1");
+  display2.display();
+}
+
+// ----------------- TASK RTOS -----------------
+
+// Core 0: motor stepper1, arah "positif" (tanpa nilai step minus)
+void core0Task(void *pvParameters) {
+  for (;;) {
+    Serial.println("Core 0: clockwise");
+    stepper1.step(stepsPerRevolution);   // putar searah jarum jam
+    vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
 
-// Fungsi untuk membaca rotary encoder 2 (core 1)
-void core1Task(void *parameter) {
-  pinMode(encoderPin2CLK, INPUT);  // Set pin CLK untuk encoder 2 sebagai input
-  pinMode(encoderPin2DT, INPUT);   // Set pin DT untuk encoder 2 sebagai input
-  pinMode(encoderPin2SW, INPUT_PULLUP);  // Set pin SW untuk encoder 2 dengan pull-up internal
-
-  int lastEncoded2 = 0;  // Variabel untuk menyimpan status sebelumnya dari CLK
-
-  while (true) {
-    int MSB = digitalRead(encoderPin2CLK);  // Baca status CLK
-    int LSB = digitalRead(encoderPin2DT);   // Baca status DT
-
-    // Deteksi perubahan arah encoder
-    int encoded = (MSB << 1) | LSB;  // Gabungkan MSB dan LSB
-    int sum = (lastEncoded2 << 2) | encoded;  // Gabungkan dengan status sebelumnya
-    if (sum == 0b1101 || sum == 0b0110) {
-      encoderValue2++;  // Encoder diputar searah
-    }
-    if (sum == 0b1110 || sum == 0b0001) {
-      encoderValue2--;  // Encoder diputar berlawanan arah
-    }
-    lastEncoded2 = encoded;  // Simpan status terakhir
-
-    // Tampilkan nilai encoder 2 di OLED kedua (core 1)
-    display2.clearDisplay();
-    display2.setTextSize(1);
-    display2.setTextColor(SSD1306_WHITE);
-    display2.setCursor(0, 0);
-    display2.print("Core 1 : Regular");
-
-    display2.setCursor(0, 10);
-    display2.print("Encoder 2: ");
-    display2.print(encoderValue2);
-    display2.display();
-
-    vTaskDelay(100 / portTICK_PERIOD_MS);  // Delay pendek untuk membaca encoder
+// Core 1: motor stepper2, arah berlawanan
+void core1Task(void *pvParameters) {
+  for (;;) {
+    Serial.println("Core 1: counterclockwise");
+    stepper2.step(-stepsPerRevolution);  // putar berlawanan (nilai minus di sini)
+    vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
+
+// ----------------- SETUP & LOOP -----------------
 
 void setup() {
-  // Inisialisasi komunikasi I2C untuk OLED pertama (core 0) menggunakan pin 14 (SDA) dan 13 (SCL)
-  Wire.begin(14, 13);  // SDA, SCL untuk OLED pertama di core 0
+  Serial.begin(115200);
 
-  // Inisialisasi komunikasi I2C untuk OLED kedua (core 1) menggunakan pin 20 (SDA) dan 19 (SCL)
-  Wire1.begin(20, 19);  // SDA, SCL untuk OLED kedua di core 1
+  // Set kecepatan motor
+  stepper1.setSpeed(60);  // rpm
+  stepper2.setSpeed(60);  // rpm
 
-  // Inisialisasi OLED pertama (di core 0)
-  if (!display1.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
-    Serial.println(F("Gagal menginisialisasi OLED pertama!"));
-    while (true);  // Jika OLED pertama gagal inisialisasi, hentikan program
+  // Inisialisasi dua bus I2C
+  // OLED1: SDA 14, SCL 13
+  I2C_oled1.begin(14, 13);
+  // OLED2: SDA 20, SCL 19
+  I2C_oled2.begin(20, 19);
+
+  // Inisialisasi dua OLED (alamat sama 0x3C di bus berbeda)
+  if (!display1.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("OLED1 gagal init");
+  }
+  if (!display2.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("OLED2 gagal init");
   }
 
-  // Inisialisasi OLED kedua (di core 1)
-  if (!display2.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
-    Serial.println(F("Gagal menginisialisasi OLED kedua!"));
-    while (true);  // Jika OLED kedua gagal inisialisasi, hentikan program
-  }
+  initDisplays();
 
-  display1.display();
-  display2.display();
-  delay(2000);  // Tampilkan logo awal OLED selama 2 detik
+  // Buat dua task RTOS, dipin ke core yang berbeda
+  xTaskCreatePinnedToCore(core1Task, "Core1Task", 4096, NULL, 1, NULL, 0);
 
-  // Buat task untuk core 0 dan core 1
-  xTaskCreatePinnedToCore(core0Task, "Core0Task", 10000, NULL, 1, NULL, 0);  // Jalankan di core 0
-  xTaskCreatePinnedToCore(core1Task, "Core1Task", 10000, NULL, 1, NULL, 1);  // Jalankan di core 1
-}
+  xTaskCreatePinnedToCore(core1Task, "Core1Task", 4096, NULL, 1, NULL, 1);
 
 void loop() {
-  // Tidak ada kode di loop() karena tugas dijalankan di core 0 dan core 1
+  // Kosong, semua kerja di task RTOS
 }
