@@ -1,4 +1,0 @@
-[wokwi]
-board = "board-esp32-s3-devkitc-1"
-firmware = "sketch.ino"
-diagram = "diagram.json"
