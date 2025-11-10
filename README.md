@@ -136,9 +136,6 @@ void loop() {
 2. Jalankan simulasi langsung di Wokwi.  
 3. Amati aktivitas task di **core 0** dan **core 1** melalui Serial Monitor Wokwi.  
 4. Ubah parameter seperti **delay**, **prioritas**, atau **stack size** untuk melihat efek pada eksekusi task.  
-5. Jalankan ulang simulasi dan catat perbedaan hasilnya.  
-6. Setelah simulasi berjalan dengan baik, unggah kode ke **ESP32-S3 nyata** untuk pengujian fisik.  
-7. Bandingkan hasil simulasi dan hasil nyata untuk memastikan konsistensi performa antar core.
 
 ---
 
