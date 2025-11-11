@@ -121,7 +121,7 @@ void loop() {
 |----|----------------------------|--------------------------------------------------------------------|--------------------------------------------------------|
 | 1  | Button                     | [Wokwi Project](https://wokwi.com/projects/447244574109811713)     | [Drive](https://drive.google.com/xxxxxxxx)             |
 | 2  | LED                        | [Wokwi Project](https://wokwi.com/projects/447245467456890881)     | [Drive](https://drive.google.com/eeeeeeee)             |
-| 3  | Potentiometer              | [Wokwi Project](https://wokwi.com/projects/447251511213579265)     | [Drive](https://drive.google.com/yyyyyyyy)             |
+| 3  | Potentiometer              | [Wokwi Project](https://wokwi.com/projects/447266022306070529)     | [Drive](https://drive.google.com/yyyyyyyy)             |
 | 4  | Buzzer                     | [Wokwi Project](https://wokwi.com/projects/447247199660893185)     | [Drive](https://drive.google.com/zzzzzzzz)             |
 | 5  | Servo Motor                | [Wokwi Project](https://wokwi.com/projects/447252879958924289)     | [Drive](https://drive.google.com/aaaaaaaa)             |
 | 6  | Stepper Motor              | [Wokwi Project](https://wokwi.com/projects/447251511213579265)     | [Drive](https://drive.google.com/bbbbbbbb)             |
