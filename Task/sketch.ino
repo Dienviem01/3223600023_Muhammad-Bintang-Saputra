@@ -1,109 +1,220 @@
+#include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <ESP32Servo.h>
+#include <AccelStepper.h>
 
-// Definisikan ukuran layar OLED
+// ================= OLED =================
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
+#define OLED_ADDR 0x3C
+#define SDA_PIN 14
+#define SCL_PIN 13
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-// Alamat I2C untuk OLED
-#define OLED_ADDRESS 0x3C
+// ================= SERVO =================
+#define SERVO_PIN 17
+Servo myServo;
+int servoPos = 0;
+bool servoDir = true;
 
-// Inisialisasi OLED pertama (I2C di core 0, menggunakan pin 14 (SDA) dan 13 (SCL))
-Adafruit_SSD1306 display1(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+// ================= STEPPER =================
+#define IN1 37
+#define IN2 38
+#define IN3 39
+#define IN4 40
+AccelStepper stepper(AccelStepper::FULL4WIRE, IN1, IN3, IN2, IN4);
+bool stepDir = true;
 
-// Inisialisasi OLED kedua (I2C di core 1, menggunakan pin 20 (SDA) dan 19 (SCL))
-Adafruit_SSD1306 display2(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire1, -1);
+// ================= POTENSIOMETER =================
+#define POT_PIN 16
+int lastPotValue = -1;
 
-// Flag untuk mengatur giliran core
-volatile bool core0Turn = true;
+// ================= ROTARY ENCODER =================
+#define CLK_PIN 4
+#define DT_PIN 5
+#define SW_PIN 6
+int encoderPos = 0;
+int lastCLK = HIGH;
 
-// Task yang dijalankan pada core 0
-void core0Task(void *parameter) {
-  while (true) {
-    if (core0Turn) {
-      // Dapatkan ID core yang sedang digunakan
-      int coreID = xPortGetCoreID();  // Ini akan mengembalikan 0 untuk core 0 atau 1 untuk core 1
+// ================= BUTTON, LED, BUZZER =================
+#define BUTTON_PIN 21
+#define LED_PIN 2
+#define BUZZER_PIN 1
 
-      // Tampilkan pesan "Core X : RTOS" di OLED pertama (core 0)
-      display1.clearDisplay();
-      display1.setTextSize(1);
-      display1.setTextColor(SSD1306_WHITE);
-      display1.setCursor(0, 0);
-      display1.print("Running on Core ");
-      display1.print(coreID);  // Menampilkan ID core
-      display1.setCursor(0, 10);  // Pindahkan ke baris berikutnya
-      display1.print("Core 0 : RTOS");
-      display1.display();
-      
-      // Beri waktu 5 detik agar pesan tetap tampil
-      vTaskDelay(5000 / portTICK_PERIOD_MS);  // Tunda 5 detik
+// ================= TASK HANDLE =================
+TaskHandle_t oledTaskHandle;
+TaskHandle_t servoTaskHandle;
+TaskHandle_t potTaskHandle;
+TaskHandle_t encoderTaskHandle;
+TaskHandle_t buttonTaskHandle;
+TaskHandle_t ledTaskHandle;
+TaskHandle_t buzzerTaskHandle;
+TaskHandle_t stepperTaskHandle;
 
-      // Ganti giliran ke core 1
-      core0Turn = false;
-    }
+// ================= TASK 1: OLED =================
+void OledTask(void *pvParameters) {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(10, 20);
+  display.println("Task berjalan");
+  display.display();
+  // Task selesai setelah menampilkan pesan pertama kali
+  vTaskDelete(NULL);
+}
 
-    vTaskDelay(100 / portTICK_PERIOD_MS);  // Delay pendek untuk memberi kesempatan kepada core 1
+// ================= TASK 2: SERVO =================
+void ServoTask(void *pvParameters) {
+  Serial.println("Servo: Task berjalan");
+  for (;;) {
+    myServo.write(servoPos);
+    if (servoDir) servoPos += 5;
+    else servoPos -= 5;
+
+    if (servoPos >= 180) servoDir = false;
+    if (servoPos <= 0) servoDir = true;
+
+    vTaskDelay(pdMS_TO_TICKS(150)); // Update posisi setiap 150ms
   }
 }
 
-// Task yang dijalankan pada core 1
-void core1Task(void *parameter) {
-  while (true) {
-    if (!core0Turn) {
-      // Dapatkan ID core yang sedang digunakan
-      int coreID = xPortGetCoreID();  // Ini akan mengembalikan 0 untuk core 0 atau 1 untuk core 1
+// ================= TASK 3: POTENTIOMETER =================
+void PotTask(void *pvParameters) {
+  for (;;) {
+    int potValue = analogRead(POT_PIN);
+    int potPercentage = map(potValue, 0, 4095, 0, 100);  // Map ke % (0-100)
 
-      // Tampilkan pesan "Core X : Regular" di OLED kedua (core 1)
-      display2.clearDisplay();
-      display2.setTextSize(1);
-      display2.setTextColor(SSD1306_WHITE);
-      display2.setCursor(0, 0);
-      display2.print("Running on Core ");
-      display2.print(coreID);  // Menampilkan ID core
-      display2.setCursor(0, 10);  // Pindahkan ke baris berikutnya
-      display2.print("Core 1 : Regular");
-      display2.display();
-      
-      // Beri waktu 5 detik agar pesan tetap tampil
-      vTaskDelay(5000 / portTICK_PERIOD_MS);  // Tunda 5 detik
-
-      // Ganti giliran ke core 0
-      core0Turn = true;
+    // Hanya cetak jika ada perubahan signifikan pada nilai potensiometer
+    if (potPercentage != lastPotValue) {
+      Serial.print("Task Potensiometer value: ");
+      Serial.print(potPercentage);
+      Serial.println("%");
+      lastPotValue = potPercentage;
     }
 
-    vTaskDelay(100 / portTICK_PERIOD_MS);  // Delay pendek untuk memberi kesempatan kepada core 0
+    vTaskDelay(pdMS_TO_TICKS(500)); // Update tiap 500ms
   }
 }
 
+// ================= TASK 4: ROTARY ENCODER =================
+void EncoderTask(void *pvParameters) {
+  for (;;) {
+    int clkState = digitalRead(CLK_PIN);
+    if (clkState != lastCLK && clkState == LOW) {
+      if (digitalRead(DT_PIN) != clkState)
+        encoderPos++;
+      else
+        encoderPos--;
+      Serial.print("Task Encoder value: ");
+      Serial.println(encoderPos);
+    }
+    lastCLK = clkState;
+
+    // Reset posisi encoder jika tombol encoder ditekan
+    if (digitalRead(SW_PIN) == LOW) {
+      encoderPos = 0;
+      Serial.println("Task Encoder: Direset ke 0");
+      vTaskDelay(pdMS_TO_TICKS(300));  // Debounce
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(5));
+  }
+}
+
+// ================= TASK 5: BUTTON =================
+void ButtonTask(void *pvParameters) {
+  for (;;) {
+    if (digitalRead(BUTTON_PIN) == LOW) {
+      Serial.println("Task Button: Diklik");
+      vTaskDelay(pdMS_TO_TICKS(300)); // Debounce
+    }
+    vTaskDelay(pdMS_TO_TICKS(50)); // Polling interval
+  }
+}
+
+// ================= TASK 6: LED =================
+void LedTask(void *pvParameters) {
+  for (;;) {
+    digitalWrite(LED_PIN, HIGH);   // LED menyala
+    Serial.println("Task LED: Nyala");
+    vTaskDelay(pdMS_TO_TICKS(5000)); // Nyala selama 5 detik
+    digitalWrite(LED_PIN, LOW);    // LED mati
+    Serial.println("Task LED: Mati");
+    vTaskDelay(pdMS_TO_TICKS(5000)); // Mati selama 5 detik
+  }
+}
+
+// ================= TASK 7: BUZZER =================
+void BuzzerTask(void *pvParameters) {
+  for (;;) {
+    digitalWrite(BUZZER_PIN, HIGH);   // Buzzer menyala
+    Serial.println("Task Buzzer: Nyala");
+    vTaskDelay(pdMS_TO_TICKS(5000));  // Buzzer menyala selama 5 detik
+    digitalWrite(BUZZER_PIN, LOW);    // Buzzer mati
+    Serial.println("Task Buzzer: Mati");
+    vTaskDelay(pdMS_TO_TICKS(5000));  // Buzzer mati selama 5 detik
+  }
+}
+
+// ================= TASK 8: STEPPER =================
+void StepperTask(void *pvParameters) {
+  Serial.println("Stepper: Task berjalan");
+  stepper.setMaxSpeed(500);
+  stepper.setAcceleration(200);
+  for (;;) {
+    if (stepDir)
+      stepper.moveTo(200);
+    else
+      stepper.moveTo(0);
+
+    stepper.run();
+    if (stepper.distanceToGo() == 0) stepDir = !stepDir;
+
+    vTaskDelay(pdMS_TO_TICKS(5));
+  }
+}
+
+// ================= SETUP =================
 void setup() {
-  // Inisialisasi komunikasi I2C untuk OLED pertama (core 0) menggunakan pin 14 (SDA) dan 13 (SCL)
-  Wire.begin(14, 13);  // SDA, SCL untuk OLED pertama di core 0
+  Serial.begin(115200);
+  Wire.begin(SDA_PIN, SCL_PIN);
 
-  // Inisialisasi komunikasi I2C untuk OLED kedua (core 1) menggunakan pin 20 (SDA) dan 19 (SCL)
-  Wire1.begin(20, 19);  // SDA, SCL untuk OLED kedua di core 1
-
-  // Inisialisasi OLED pertama (di core 0)
-  if (!display1.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
-    Serial.println(F("Gagal menginisialisasi OLED pertama!"));
-    while (true);  // Jika OLED pertama gagal inisialisasi, hentikan program
+  // OLED
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    Serial.println("Gagal inisialisasi OLED!");
+    for (;;);
   }
+  display.clearDisplay();
+  display.display();
 
-  // Inisialisasi OLED kedua (di core 1)
-  if (!display2.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
-    Serial.println(F("Gagal menginisialisasi OLED kedua!"));
-    while (true);  // Jika OLED kedua gagal inisialisasi, hentikan program
-  }
+  // I/O
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(CLK_PIN, INPUT);
+  pinMode(DT_PIN, INPUT);
+  pinMode(SW_PIN, INPUT_PULLUP);
 
-  display1.display();
-  display2.display();
-  delay(2000);  // Tampilkan logo awal OLED selama 2 detik
+  // Servo
+  myServo.attach(SERVO_PIN);
+  // Stepper
+  stepper.setSpeed(200);
 
-  // Buat task untuk core 0 dan core 1
-  xTaskCreatePinnedToCore(core0Task, "Core0Task", 10000, NULL, 1, NULL, 0);  // Jalankan di core 0
-  xTaskCreatePinnedToCore(core1Task, "Core1Task", 10000, NULL, 1, NULL, 1);  // Jalankan di core 1
+  // ================= BUAT SEMUA TASK =================
+  xTaskCreatePinnedToCore(OledTask, "OLED", 4096, NULL, 1, &oledTaskHandle, 0);
+  xTaskCreatePinnedToCore(ServoTask, "Servo", 2048, NULL, 2, &servoTaskHandle, 1);
+  xTaskCreatePinnedToCore(PotTask, "Pot", 2048, NULL, 1, &potTaskHandle, 0);
+  xTaskCreatePinnedToCore(EncoderTask, "Encoder", 2048, NULL, 1, &encoderTaskHandle, 1);
+  xTaskCreatePinnedToCore(ButtonTask, "Button", 2048, NULL, 1, &buttonTaskHandle, 0);
+  xTaskCreatePinnedToCore(LedTask, "LED", 2048, NULL, 1, &ledTaskHandle, 0);
+  xTaskCreatePinnedToCore(BuzzerTask, "Buzzer", 2048, NULL, 1, &buzzerTaskHandle, 0);
+  xTaskCreatePinnedToCore(StepperTask, "Stepper", 4096, NULL, 2, &stepperTaskHandle, 1);
+
+  Serial.println("=== FreeRTOS 8 Task Started ===");
 }
 
 void loop() {
-  // Tidak ada kode di loop() karena tugas dijalankan di core 0 dan core 1
+  vTaskDelay(pdMS_TO_TICKS(1000));
 }
