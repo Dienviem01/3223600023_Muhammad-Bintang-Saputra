@@ -133,6 +133,14 @@ Task Buzzer: Mati
 
 ---
 
+## 🔗 Link Wokwi dan Video
+
+| No | Judul Praktikum            | Link Wokwi                                                         | Link Video (Drive Shortcut)                            |
+|----|----------------------------|--------------------------------------------------------------------|--------------------------------------------------------|
+| 1  | Task                       | [Wokwi Project](https://wokwi.com/projects/447212640960558081)     | [Drive](https://drive.google.com/xxxxxxxx)             |
+
+---
+
 ## 👨‍💻 Kontributor
 
 | Nama                         | NIM        | Peran                                  |
